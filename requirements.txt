@@ -4,3 +4,4 @@ aiohttp
 websockets
 pandas
 numpy
+pyotp

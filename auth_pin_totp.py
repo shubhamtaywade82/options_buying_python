@@ -1,13 +1,19 @@
 #!/usr/bin/env python3.11
 """
-DhanHQ Authentication - PIN & TOTP Flow (Method 2)
-Run this once to generate access_token, then set DHAN_ACCESS_TOKEN env var.
+DhanHQ Authentication - PIN + TOTP Flow (Method 2)
+Supports both manual TOTP entry and automatic TOTP generation from secret.
 
-Requires: Python 3.11+, dhanhq==2.2.0
+Requires: Python 3.11+, dhanhq==2.2.0, pyotp
 """
 import os
 import sys
+import pyotp
 from dhanhq import DhanLogin
+
+
+def get_totp_from_secret(totp_secret: str) -> str:
+    """Generate current TOTP code from base32 secret."""
+    return pyotp.TOTP(totp_secret).now()
 
 
 def main():
@@ -25,12 +31,20 @@ def main():
         print("Valid 6-digit PIN is required")
         sys.exit(1)
 
-    totp = os.environ.get("DHAN_TOTP")
-    if not totp:
-        totp = input("Enter TOTP (from authenticator app): ").strip()
-    if not totp or len(totp) != 6 or not totp.isdigit():
-        print("Valid 6-digit TOTP is required")
-        sys.exit(1)
+    # TOTP: either from secret (auto) or manual entry
+    totp_secret = os.environ.get("DHAN_TOTP_SECRET")
+    if totp_secret:
+        # Auto-generate TOTP from secret
+        totp = get_totp_from_secret(totp_secret)
+        print(f"Auto-generated TOTP: {totp}")
+    else:
+        # Manual entry fallback
+        totp = os.environ.get("DHAN_TOTP")
+        if not totp:
+            totp = input("Enter TOTP (from authenticator app): ").strip()
+        if not totp or len(totp) != 6 or not totp.isdigit():
+            print("Valid 6-digit TOTP is required")
+            sys.exit(1)
 
     print("\nGenerating access token...")
     dhan_login = DhanLogin(client_id)
@@ -42,7 +56,8 @@ def main():
         print(f"\naccess_token = {access_token}")
         print(f"\nSet this in your environment:")
         print(f'  export DHAN_ACCESS_TOKEN="{access_token}"')
-        print(f"\nToken expires in 24 hours. Use dhan_login.renew_token() to refresh.")
+        print(f"\nToken expires in 24 hours. To renew:")
+        print(f'  python3.11 -c "from dhanhq import DhanLogin; DhanLogin(\"{client_id}\").renew_token(\"<token>\")"')
         return access_token
     except Exception as e:
         print(f"\n✗ Failed to generate token: {e}")

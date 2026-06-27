@@ -69,32 +69,43 @@ curl http://localhost:11434/api/tags
 
 ## Authentication
 
-### Method 1: PIN + TOTP (Recommended)
-Run the auth script once to generate your access token:
+### Method 1: PIN + TOTP (Recommended) — Automatic or Manual
 
+**Option A: Fully Automatic (store TOTP secret once)**
 ```bash
+# 1. Get your TOTP secret from Dhan 2FA setup (base32 string, e.g., "JBSWY3DPEHPK3PXP")
+# 2. Set environment variables:
+export DHAN_CLIENT_ID="your_client_id"
+export DHAN_PIN="123456"
+export DHAN_TOTP_SECRET="YOUR_BASE32_TOTP_SECRET_HERE"
+
+# 3. Run once - auto-generates TOTP and gets access token:
 python auth_pin_totp.py
-# Enter your Client ID, 6-digit PIN, and TOTP from authenticator app
 # Output: access_token = eyJhbGciOiJIUzI1NiIs...
 # Copy and export:
 export DHAN_ACCESS_TOKEN="your_token_here"
 ```
 
-### Method 2: Manual (Dhan Web Portal)
-1. Log into https://dhan.co
-2. Settings → API → Access Token
-3. Generate/copy token
-4. `export DHAN_ACCESS_TOKEN="your_token"`
+**Option B: Manual TOTP entry**
+```bash
+python auth_pin_totp.py
+# Enter Client ID, PIN, and TOTP from authenticator app when prompted
+```
 
 ### Required Environment Variables
 ```bash
+# Required
 export DHAN_CLIENT_ID="your_10_digit_client_id"
 export DHAN_ACCESS_TOKEN="your_access_token_from_above"
+
+# Optional (for automatic TOTP generation)
+export DHAN_PIN="123456"              # 6-digit PIN
+export DHAN_TOTP_SECRET="JBSWY3DPEHPK3PXP"  # base32 secret from Dhan 2FA setup
 ```
 
 ### Token Renewal (every 24 hours)
 ```bash
-# Option 1: Re-run auth script
+# Option 1: Re-run auth script (auto if DHAN_TOTP_SECRET set)
 python auth_pin_totp.py
 
 # Option 2: Direct renewal (if token not fully expired)
