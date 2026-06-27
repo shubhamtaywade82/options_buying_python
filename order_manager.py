@@ -1,22 +1,14 @@
 """
-Handles order placement, SL/TP monitoring, and position lifecycle.
-Uses: POST /v2/orders, GET /v2/positions, DELETE /v2/orders/{id}
+Handles position lifecycle, SL/TP monitoring.
+Order placement functions moved to data_layer.py (using DhanHQ-py SDK).
 """
 import asyncio
-import aiohttp
 from typing import List, Dict
 from dataclasses import dataclass, field
 from datetime import datetime
-from config import (
-    DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN,
-    MAX_CAPITAL_PER_TRADE_PCT, STOP_LOSS_PCT, TARGET_PCT, MAX_OPEN_LEGS
-)
+from config import STOP_LOSS_PCT, TARGET_PCT
 
-BASE_URL = "https://api.dhan.co/v2"
-HEADERS = {
-    "access-token": DHAN_ACCESS_TOKEN,
-    "Content-Type": "application/json",
-}
+from data_layer import check_margin, get_fund_limits, place_buy_order, place_exit_order
 
 
 @dataclass
@@ -48,100 +40,9 @@ class OptionLeg:
         return self.entry_price * STOP_LOSS_PCT * self.quantity
 
 
-async def check_margin(
-    security_id: str,
-    quantity: int,
-    price: float,
-    session: aiohttp.ClientSession,
-) -> dict:
-    """POST /v2/margincalculator — pre-trade margin check."""
-    payload = {
-        "dhanClientId": DHAN_CLIENT_ID,
-        "exchangeSegment": "NSE_FNO",
-        "transactionType": "BUY",
-        "quantity": quantity,
-        "productType": "INTRADAY",
-        "securityId": security_id,
-        "price": price,
-    }
-    async with session.post(
-        f"{BASE_URL}/margincalculator",
-        json=payload, headers=HEADERS
-    ) as resp:
-        resp.raise_for_status()
-        return await resp.json()
-
-
-async def get_fund_limits(session: aiohttp.ClientSession) -> dict:
-    """GET /v2/fundlimit — available balance."""
-    async with session.get(f"{BASE_URL}/fundlimit", headers=HEADERS) as resp:
-        resp.raise_for_status()
-        return await resp.json()
-
-
-async def place_buy_order(
-    security_id: str,
-    quantity: int,
-    price: float,              # Use 0 for MARKET
-    session: aiohttp.ClientSession,
-    order_type: str = "LIMIT",
-) -> str:
-    """
-    POST /v2/orders — Naked BUY (INTRADAY, NSE_FNO).
-    Returns orderId on success.
-    """
-    payload = {
-        "dhanClientId": DHAN_CLIENT_ID,
-        "transactionType": "BUY",
-        "exchangeSegment": "NSE_FNO",
-        "productType": "INTRADAY",
-        "orderType": order_type,
-        "validity": "DAY",
-        "securityId": security_id,
-        "quantity": quantity,
-        "price": price,
-        "disclosedQuantity": 0,
-        "afterMarketOrder": False,
-    }
-    async with session.post(
-        f"{BASE_URL}/orders", json=payload, headers=HEADERS
-    ) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
-        order_id = data.get("orderId", "")
-        print(f"[Order] Placed BUY {security_id} qty={quantity} @ {price} -> {order_id}")
-        return order_id
-
-
-async def place_exit_order(
-    security_id: str,
-    quantity: int,
-    session: aiohttp.ClientSession,
-) -> str:
-    """MARKET SELL to exit position."""
-    payload = {
-        "dhanClientId": DHAN_CLIENT_ID,
-        "transactionType": "SELL",
-        "exchangeSegment": "NSE_FNO",
-        "productType": "INTRADAY",
-        "orderType": "MARKET",
-        "validity": "DAY",
-        "securityId": security_id,
-        "quantity": quantity,
-        "price": 0,
-    }
-    async with session.post(
-        f"{BASE_URL}/orders", json=payload, headers=HEADERS
-    ) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
-        return data.get("orderId", "")
-
-
 async def monitor_positions(
     legs: List["OptionLeg"],
     ticks: Dict[str, float],     # security_id -> current LTP (from WS feed)
-    session: aiohttp.ClientSession,
 ) -> None:
     """
     Called on every tick update.
@@ -160,20 +61,20 @@ async def monitor_positions(
         # Theta time stop: 2 PM on expiry day
         if now.hour >= 14 and now.minute >= 0:
             print(f"[Monitor] Time stop triggered for {leg.security_id}")
-            await place_exit_order(leg.security_id, leg.quantity, session)
+            await place_exit_order(leg.security_id, leg.quantity)
             leg.status = "TIME_EXIT"
             continue
 
         # Hard Stop Loss
         if ltp <= leg.sl_price:
             print(f"[Monitor] SL HIT {leg.security_id} ltp={ltp} sl={leg.sl_price}")
-            await place_exit_order(leg.security_id, leg.quantity, session)
+            await place_exit_order(leg.security_id, leg.quantity)
             leg.status = "SL_HIT"
             continue
 
         # Target Profit
         if ltp >= leg.tp_price:
             print(f"[Monitor] TP HIT {leg.security_id} ltp={ltp} tp={leg.tp_price}")
-            await place_exit_order(leg.security_id, leg.quantity, session)
+            await place_exit_order(leg.security_id, leg.quantity)
             leg.status = "TP_HIT"
             continue
