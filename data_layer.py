@@ -1,10 +1,13 @@
 """
-Unified data fetcher using DhanHQ-py SDK (v2.0.2)
+Unified data fetcher using DhanHQ-py SDK v2.2.0
 Sources:
   - dhan.intraday_minute_data()          → 1/5/15-min OHLCV
   - dhan.option_chain()                  → Greeks, OI, IV, bid/ask
   - dhan.ticker_data() / ohlc_data()     → Spot LTP snapshot
   - dhan.expiry_list()                   → Expiry dates
+  - dhan.margin_calculator()             → Margin required
+  - dhan.get_fund_limits()               → Available balance
+  - dhan.place_order()                   → Order placement
 """
 import asyncio
 import pandas as pd
@@ -12,16 +15,17 @@ from datetime import date, timedelta
 from typing import Dict, List, Optional
 from config import DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN
 
-from dhanhq import dhanhq
+from dhanhq import DhanContext, dhanhq
 
 _dhan_client: Optional[dhanhq] = None
 
 
 def get_dhan_client() -> dhanhq:
-    """Get or create singleton DhanHQ client."""
+    """Get or create singleton DhanHQ client with DhanContext."""
     global _dhan_client
     if _dhan_client is None:
-        _dhan_client = dhanhq(DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN)
+        ctx = DhanContext(DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN)
+        _dhan_client = dhanhq(ctx)
     return _dhan_client
 
 
@@ -58,7 +62,6 @@ async def fetch_intraday(
     to_dt = date.today().isoformat()
     from_dt = (date.today() - timedelta(days=days_back)).isoformat()
 
-    # Run in thread pool since SDK is sync
     loop = asyncio.get_event_loop()
     raw = await loop.run_in_executor(
         None,
@@ -78,7 +81,7 @@ async def fetch_ltp(
     segment_map: Dict[str, List[int]],
 ) -> Dict[str, float]:
     """
-    SDK: dhan.ticker_data() or dhan.ohlc_data()
+    SDK: dhan.ticker_data()
     Returns {security_id_str: ltp_float}
     """
     dhan = get_dhan_client()
@@ -109,17 +112,15 @@ async def compute_ivr(
 ) -> float:
     """
     Uses historical daily data of expired options to compute IVR.
-    SDK: dhan.historical_daily_data()
+    SDK: dhan.historical_daily_data() with expired options params.
     IVR = (current_iv - iv_low) / (iv_high - iv_low) * 100
     """
     dhan = get_dhan_client()
     to_dt = date.today().isoformat()
     from_dt = (date.today() - timedelta(days=lookback)).isoformat()
 
-    # Note: The SDK doesn't have rollingoption endpoint directly.
-    # We need to fetch expired options data for IV calculation.
-    # For now, return neutral fallback - would need historical options data
-    # which requires the expired_options_data endpoint (available in v2.1+)
+    # Note: The SDK v2.2.0 may not have rollingoption endpoint directly.
+    # For now, return neutral fallback - would need expired_options_data endpoint
     return 50.0
 
 

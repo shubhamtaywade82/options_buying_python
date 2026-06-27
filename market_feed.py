@@ -1,26 +1,15 @@
 """
-Real-time WebSocket feed using DhanHQ-py SDK MarketFeed (v2.0.2)
+Real-time WebSocket feed using DhanHQ-py SDK MarketFeed v2.2.0
 """
 import asyncio
 from typing import Callable, List, Dict, Any
 from config import DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN
 
-from dhanhq import marketfeed
-from dhanhq.marketfeed import DhanFeed
-
-# Constants from module (not class) in v2.0.2
-NSE = marketfeed.NSE
-NSE_FNO = marketfeed.NSE_FNO
-BSE = marketfeed.BSE
-BSE_FNO = marketfeed.BSE_FNO
-IDX = marketfeed.IDX
-Ticker = marketfeed.Ticker
-Quote = marketfeed.Quote
-Full = marketfeed.Full
+from dhanhq import DhanContext, MarketFeed
 
 
 class MarketFeedWrapper:
-    """Async wrapper around DhanHQ DhanFeed for non-blocking operation."""
+    """Async wrapper around DhanHQ MarketFeed for non-blocking operation."""
 
     def __init__(
         self,
@@ -31,31 +20,37 @@ class MarketFeedWrapper:
         self.instrument_list = instrument_list
         self.on_tick = on_tick
         self.request_code = request_code
-        self._feed: DhanFeed = None
+        self._feed: MarketFeed = None
         self._running = False
+        self._context = DhanContext(DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN)
 
     def _convert_instruments(self) -> List[tuple]:
-        """Convert our instrument dict format to DhanFeed tuple format."""
+        """Convert our instrument dict format to MarketFeed tuple format."""
         segment_map = {
-            "NSE": NSE,
-            "NSE_FNO": NSE_FNO,
-            "BSE": BSE,
-            "BSE_FNO": BSE_FNO,
-            "IDX_I": IDX,  # Indices use IDX segment
+            "NSE": MarketFeed.NSE,
+            "NSE_FNO": MarketFeed.NSE_FNO,
+            "BSE": MarketFeed.BSE,
+            "BSE_FNO": MarketFeed.BSE_FNO,
+            "IDX_I": MarketFeed.IDX,
         }
         type_map = {
-            15: Ticker,
-            17: Quote,
-            21: Full,
+            15: MarketFeed.Ticker,
+            17: MarketFeed.Quote,
+            21: MarketFeed.Full,
         }
-        sub_type = type_map.get(self.request_code, Quote)
+        sub_type = type_map.get(self.request_code, MarketFeed.Quote)
 
         instruments = []
         for inst in self.instrument_list:
-            seg = segment_map.get(inst.get("ExchangeSegment", "NSE_FNO"), NSE_FNO)
+            seg = segment_map.get(inst.get("ExchangeSegment", "NSE_FNO"), MarketFeed.NSE_FNO)
             sec_id = str(inst.get("SecurityId", ""))
             instruments.append((seg, sec_id, sub_type))
         return instruments
+
+    def _on_message(self, data: Dict):
+        """Callback for incoming market data."""
+        if data:
+            self.on_tick(data)
 
     async def start(self):
         """Start the feed in a background thread."""
@@ -63,21 +58,16 @@ class MarketFeedWrapper:
         instruments = self._convert_instruments()
 
         def run_feed():
-            self._feed = DhanFeed(DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN, instruments)
-            self._feed.on_connection_opened = self._on_connected
+            self._feed = MarketFeed(
+                dhan_context=self._context,
+                instruments=instruments,
+                version="v2",
+                on_message=self._on_message,
+            )
             self._feed.run_forever()
-
-            while self._running:
-                data = self._feed.get_data()
-                if data:
-                    self.on_tick(data)
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, run_feed)
-
-    def _on_connected(self):
-        """Called when WebSocket connection is established."""
-        pass
 
     async def stop(self):
         """Stop the feed."""
@@ -90,9 +80,13 @@ class MarketFeedWrapper:
         if self._feed:
             converted = []
             for inst in instruments:
-                seg_map = {"NSE": NSE, "NSE_FNO": NSE_FNO, "IDX_I": IDX}
-                seg = seg_map.get(inst.get("ExchangeSegment", "NSE_FNO"), NSE_FNO)
-                converted.append((seg, str(inst.get("SecurityId", "")), Quote))
+                seg_map = {
+                    "NSE": MarketFeed.NSE,
+                    "NSE_FNO": MarketFeed.NSE_FNO,
+                    "IDX_I": MarketFeed.IDX,
+                }
+                seg = seg_map.get(inst.get("ExchangeSegment", "NSE_FNO"), MarketFeed.NSE_FNO)
+                converted.append((seg, str(inst.get("SecurityId", "")), MarketFeed.Quote))
             self._feed.subscribe_symbols(converted)
 
     def unsubscribe(self, instruments: List[Dict]):
@@ -100,8 +94,12 @@ class MarketFeedWrapper:
         if self._feed:
             converted = []
             for inst in instruments:
-                seg_map = {"NSE": NSE, "NSE_FNO": NSE_FNO, "IDX_I": IDX}
-                seg = seg_map.get(inst.get("ExchangeSegment", "NSE_FNO"), NSE_FNO)
+                seg_map = {
+                    "NSE": MarketFeed.NSE,
+                    "NSE_FNO": MarketFeed.NSE_FNO,
+                    "IDX_I": MarketFeed.IDX,
+                }
+                seg = seg_map.get(inst.get("ExchangeSegment", "NSE_FNO"), MarketFeed.NSE_FNO)
                 converted.append((seg, str(inst.get("SecurityId", "")), 16))  # unsubscribe code
             self._feed.unsubscribe_symbols(converted)
 

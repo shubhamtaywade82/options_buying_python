@@ -1,4 +1,5 @@
-dhanhq==2.0.2
+# Python 3.11 required for dhanhq v2.2.0 (match statements, DhanLogin)
+dhanhq==2.2.0
 aiohttp
 websockets
 pandas
