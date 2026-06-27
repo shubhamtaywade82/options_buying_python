@@ -1,74 +1,107 @@
 """
-Real-time WebSocket feed using DhanHQ Live Market Feed (WebSocket v2)
+Real-time WebSocket feed using DhanHQ-py SDK MarketFeed v2.2.0
 """
 import asyncio
-import struct
-import json
-import websockets
-from typing import Callable, List, Dict
+from typing import Callable, List, Dict, Any
 from config import DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN
 
-
-WS_URL = (
-    f"wss://api-feed.dhan.co"
-    f"?version=2&token={DHAN_ACCESS_TOKEN}"
-    f"&clientId={DHAN_CLIENT_ID}&authType=2"
-)
-
-PACKET_SIZES = {2: 17, 4: 51, 8: 163, 5: 12, 6: 17, 50: 11}
-
-MSG_TICKER = 2
-MSG_QUOTE = 4
-MSG_FULL = 8
-MSG_OI = 5
-MSG_PREVCLOSE = 6
-MSG_DISCONNECT = 50
+from dhanhq import DhanContext, MarketFeed
 
 
-def parse_ticker(buf: bytes) -> dict:
-    """Response code 2 — LTP + LTT (17 bytes total)"""
-    sec_id = struct.unpack_from("<I", buf, 3)[0]
-    ltp = struct.unpack_from("<f", buf, 8)[0]
-    ltt = struct.unpack_from("<I", buf, 12)[0]
-    return {"type": "ticker", "security_id": sec_id, "ltp": ltp, "ltt": ltt}
+class MarketFeedWrapper:
+    """Async wrapper around DhanHQ MarketFeed for non-blocking operation."""
 
+    def __init__(
+        self,
+        instrument_list: List[Dict],
+        on_tick: Callable[[Dict], None],
+        request_code: int = 17,  # 15=Ticker, 17=Quote, 21=Full
+    ):
+        self.instrument_list = instrument_list
+        self.on_tick = on_tick
+        self.request_code = request_code
+        self._feed: MarketFeed = None
+        self._running = False
+        self._context = DhanContext(DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN)
 
-QUOTE_FMT = "<I f H I f I I I f f f f"
+    def _convert_instruments(self) -> List[tuple]:
+        """Convert our instrument dict format to MarketFeed tuple format."""
+        segment_map = {
+            "NSE": MarketFeed.NSE,
+            "NSE_FNO": MarketFeed.NSE_FNO,
+            "BSE": MarketFeed.BSE,
+            "BSE_FNO": MarketFeed.BSE_FNO,
+            "IDX_I": MarketFeed.IDX,
+        }
+        type_map = {
+            15: MarketFeed.Ticker,
+            17: MarketFeed.Quote,
+            21: MarketFeed.Full,
+        }
+        sub_type = type_map.get(self.request_code, MarketFeed.Quote)
 
+        instruments = []
+        for inst in self.instrument_list:
+            seg = segment_map.get(inst.get("ExchangeSegment", "NSE_FNO"), MarketFeed.NSE_FNO)
+            sec_id = str(inst.get("SecurityId", ""))
+            instruments.append((seg, sec_id, sub_type))
+        return instruments
 
-def parse_quote(buf: bytes) -> dict:
-    """Response code 4 — Full quote without depth (51 bytes)"""
-    vals = struct.unpack_from(QUOTE_FMT, buf, 3)
-    return {
-        "type": "quote",
-        "security_id": vals[0],
-        "ltp": vals[1], "ltq": vals[2], "ltt": vals[3],
-        "atp": vals[4], "volume": vals[5], "sell_qty": vals[6],
-        "buy_qty": vals[7], "open": vals[8], "close": vals[9],
-        "high": vals[10], "low": vals[11],
-    }
+    def _on_message(self, data: Dict):
+        """Callback for incoming market data."""
+        if data:
+            self.on_tick(data)
 
+    async def start(self):
+        """Start the feed in a background thread."""
+        self._running = True
+        instruments = self._convert_instruments()
 
-def dispatch_binary(buf: bytes, callback: Callable) -> None:
-    """Parse concatenated binary packets from a single WS message."""
-    offset = 0
-    while offset < len(buf):
-        if offset + 3 > len(buf):
-            break
-        msg_len = struct.unpack_from("<H", buf, offset + 1)[0]
-        msg_code = buf[offset]
-        size = PACKET_SIZES.get(msg_code, msg_len)
-        if size == 0 or offset + size > len(buf):
-            break
-        packet = buf[offset: offset + size]
-        if msg_code == MSG_TICKER:
-            callback(parse_ticker(packet))
-        elif msg_code == MSG_QUOTE:
-            callback(parse_quote(packet))
-        elif msg_code == MSG_DISCONNECT:
-            err_code = struct.unpack_from("<H", buf, offset + 8)[0]
-            raise ConnectionError(f"DhanHQ WS disconnect: {err_code}")
-        offset += size
+        def run_feed():
+            self._feed = MarketFeed(
+                dhan_context=self._context,
+                instruments=instruments,
+                version="v2",
+                on_message=self._on_message,
+            )
+            self._feed.run_forever()
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, run_feed)
+
+    async def stop(self):
+        """Stop the feed."""
+        self._running = False
+        if self._feed:
+            self._feed.close_connection()
+
+    def subscribe(self, instruments: List[Dict]):
+        """Subscribe to additional instruments."""
+        if self._feed:
+            converted = []
+            for inst in instruments:
+                seg_map = {
+                    "NSE": MarketFeed.NSE,
+                    "NSE_FNO": MarketFeed.NSE_FNO,
+                    "IDX_I": MarketFeed.IDX,
+                }
+                seg = seg_map.get(inst.get("ExchangeSegment", "NSE_FNO"), MarketFeed.NSE_FNO)
+                converted.append((seg, str(inst.get("SecurityId", "")), MarketFeed.Quote))
+            self._feed.subscribe_symbols(converted)
+
+    def unsubscribe(self, instruments: List[Dict]):
+        """Unsubscribe from instruments."""
+        if self._feed:
+            converted = []
+            for inst in instruments:
+                seg_map = {
+                    "NSE": MarketFeed.NSE,
+                    "NSE_FNO": MarketFeed.NSE_FNO,
+                    "IDX_I": MarketFeed.IDX,
+                }
+                seg = seg_map.get(inst.get("ExchangeSegment", "NSE_FNO"), MarketFeed.NSE_FNO)
+                converted.append((seg, str(inst.get("SecurityId", "")), 16))  # unsubscribe code
+            self._feed.unsubscribe_symbols(converted)
 
 
 async def start_feed(
@@ -77,26 +110,14 @@ async def start_feed(
     request_code: int = 17,
 ) -> None:
     """
-    Subscribe instruments and stream ticks.
-    Max 100 instruments per JSON message, 5000 per connection.
-    request_code: 15=Ticker, 17=Quote, 21=Full
+    Start the market feed with auto-reconnect.
     """
-    subscribe_msg = {
-        "RequestCode": request_code,
-        "InstrumentCount": len(instrument_list),
-        "InstrumentList": instrument_list,
-    }
+    wrapper = MarketFeedWrapper(instrument_list, on_tick, request_code)
 
-    async for ws in websockets.connect(WS_URL, ping_interval=10):
+    while True:
         try:
-            await ws.send(json.dumps(subscribe_msg))
-            async for message in ws:
-                if isinstance(message, bytes):
-                    dispatch_binary(message, on_tick)
-        except websockets.ConnectionClosedError as e:
-            print(f"[Feed] Reconnecting after: {e}")
+            await wrapper.start()
+        except Exception as e:
+            print(f"[Feed] Error: {e}. Reconnecting in 2s...")
             await asyncio.sleep(2)
             continue
-        except ConnectionError as e:
-            print(f"[Feed] Hard disconnect: {e}")
-            break

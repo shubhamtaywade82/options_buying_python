@@ -12,7 +12,6 @@ async def get_signal(
     spot_price: float,
     day_change_pct: float,
     vix: float,
-    session: aiohttp.ClientSession,
 ) -> str:
     """
     Sends market context to Ollama; expects structured JSON back.
@@ -40,9 +39,10 @@ Rules:
         "stream": False,
         "format": "json",
     }
-    async with session.post(OLLAMA_URL, json=payload) as resp:
-        raw = await resp.json()
-        result = json.loads(raw.get("response", "{}"))
+    async with aiohttp.ClientSession() as session:
+        async with session.post(OLLAMA_URL, json=payload) as resp:
+            raw = await resp.json()
+            result = json.loads(raw.get("response", "{}"))
 
     signal = result.get("signal", "NO_TRADE")
     confidence = float(result.get("confidence", 0.0))
