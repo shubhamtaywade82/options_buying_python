@@ -3,6 +3,7 @@ Strategy 2: IV Rank Mean Reversion
 Uses: compute_ivr(), fetch_intraday(), fetch_chain_snapshot()
 """
 import pandas as pd
+from typing import Tuple
 from dataclasses import dataclass
 import aiohttp
 from data_layer import compute_ivr, fetch_intraday, fetch_chain_snapshot

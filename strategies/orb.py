@@ -4,6 +4,7 @@ Valid only in 9:30-11:30 window.
 Data: fetch_intraday(interval=5)
 """
 import pandas as pd
+from typing import Tuple
 from dataclasses import dataclass
 from datetime import datetime
 import aiohttp
@@ -22,7 +23,7 @@ class ORBSignal:
     body_pct: float
 
 
-def compute_orb(df: pd.DataFrame) -> tuple[float, float, float]:
+def compute_orb(df: pd.DataFrame) -> Tuple[float, float, float]:
     """Define ORB from first 3 five-min bars (9:15-9:30). Returns (orb_high, orb_low, orb_avg_volume)."""
     today = df["ts"].iloc[-1].date()
     today_df = df[df["ts"].dt.date == today].head(3)

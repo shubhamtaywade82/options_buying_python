@@ -5,7 +5,7 @@ import asyncio
 import struct
 import json
 import websockets
-from typing import Callable
+from typing import Callable, List, Dict
 from config import DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN
 
 
@@ -72,7 +72,7 @@ def dispatch_binary(buf: bytes, callback: Callable) -> None:
 
 
 async def start_feed(
-    instrument_list: list[dict],
+    instrument_list: List[Dict],
     on_tick: Callable,
     request_code: int = 17,
 ) -> None:

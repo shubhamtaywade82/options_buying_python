@@ -2,6 +2,7 @@
 Filters option chain strikes against Greeks/IV/OI/spread thresholds.
 Option chain from POST /v2/optionchain already includes these fields.
 """
+from typing import List
 from dataclasses import dataclass
 from config import MIN_DELTA, MAX_DELTA, MIN_OI, MIN_IVR, MAX_BID_ASK_SPREAD_PCT
 
@@ -34,7 +35,7 @@ class StrikeCandidate:
 def parse_chain_to_candidates(
     chain_data: dict,
     option_type: str,          # "CE" or "PE"
-) -> list[StrikeCandidate]:
+) -> List["StrikeCandidate"]:
     """Parse raw optionchain API response into StrikeCandidate list."""
     candidates = []
     strikes = chain_data.get("data", {})
@@ -60,10 +61,10 @@ def parse_chain_to_candidates(
 
 
 def filter_strikes(
-    candidates: list[StrikeCandidate],
+    candidates: List["StrikeCandidate"],
     ivr: float,
     direction: str,    # "BUY_CE" | "BUY_PE"
-) -> list[StrikeCandidate]:
+) -> List["StrikeCandidate"]:
     """Apply all pre-trade gates. Returns filtered, sorted list."""
 
     if ivr < MIN_IVR:

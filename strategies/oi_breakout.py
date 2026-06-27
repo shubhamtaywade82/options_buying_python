@@ -6,6 +6,7 @@ Data sources:
   - fetch_ltp()            → current spot
 """
 import pandas as pd
+from typing import Dict, Tuple
 from dataclasses import dataclass
 import aiohttp
 from data_layer import fetch_intraday, fetch_chain_snapshot, fetch_ltp
@@ -23,7 +24,7 @@ class OIBreakoutSignal:
     spot: float
 
 
-def compute_oi_levels(chain_data: dict) -> dict[float, dict]:
+def compute_oi_levels(chain_data: dict) -> Dict[float, Dict]:
     """Extract OI per strike from optionchain response."""
     levels = {}
     for strike_str, data in chain_data.get("data", {}).items():
@@ -41,7 +42,7 @@ def compute_oi_levels(chain_data: dict) -> dict[float, dict]:
     return levels
 
 
-def find_key_levels(oi_levels: dict, spot: float, top_n: int = 3) -> dict:
+def find_key_levels(oi_levels: Dict, spot: float, top_n: int = 3) -> Dict:
     """Find top-N strikes by total OI near spot (within ±5%)."""
     near = {
         s: v for s, v in oi_levels.items()
@@ -83,9 +84,9 @@ def check_breakout(
 async def scan_oi_breakout(
     session: aiohttp.ClientSession,
     expiry: str,
-    prev_oi_snap: dict,
+    prev_oi_snap: Dict,
     vix: float,
-) -> "tuple[OIBreakoutSignal | None, dict]":
+) -> "Tuple[OIBreakoutSignal | None, Dict]":
     """Main scanner. Call every 3 minutes during market hours."""
 
     if not (11 <= vix <= 18):

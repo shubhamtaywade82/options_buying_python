@@ -4,6 +4,7 @@ Uses: POST /v2/orders, GET /v2/positions, DELETE /v2/orders/{id}
 """
 import asyncio
 import aiohttp
+from typing import List, Dict
 from dataclasses import dataclass, field
 from datetime import datetime
 from config import (
@@ -138,8 +139,8 @@ async def place_exit_order(
 
 
 async def monitor_positions(
-    legs: list[OptionLeg],
-    ticks: dict[str, float],     # security_id -> current LTP (from WS feed)
+    legs: List["OptionLeg"],
+    ticks: Dict[str, float],     # security_id -> current LTP (from WS feed)
     session: aiohttp.ClientSession,
 ) -> None:
     """

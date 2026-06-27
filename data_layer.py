@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import pandas as pd
 from datetime import date, timedelta
+from typing import Dict, List, Optional
 from config import DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN
 
 BASE   = "https://api.dhan.co/v2"
@@ -16,7 +17,7 @@ async def fetch_intraday(
     instrument:  str,
     interval:    int   = 5,
     days_back:   int   = 5,
-    session:     aiohttp.ClientSession = None,
+    session:     Optional[aiohttp.ClientSession] = None,
 ) -> pd.DataFrame:
     """
     POST /v2/charts/intraday
@@ -54,9 +55,9 @@ async def fetch_intraday(
 
 
 async def fetch_ltp(
-    segment_map: dict,
+    segment_map: Dict,
     session:     aiohttp.ClientSession,
-) -> dict[str, float]:
+) -> Dict[str, float]:
     """
     POST /v2/marketfeed/ltp  — rate limit 1 req/sec, max 1000 instruments
     Returns {security_id_str: ltp_float}
@@ -77,7 +78,7 @@ async def compute_ivr(
     option_type:  str = "CALL",
     strike_rel:   str = "ATM",
     lookback:     int = 30,
-    session:      aiohttp.ClientSession = None,
+    session:      Optional[aiohttp.ClientSession] = None,
 ) -> float:
     """
     Uses POST /v2/charts/rollingoption to compute IVR.
@@ -139,7 +140,7 @@ async def fetch_chain_snapshot(
 async def fetch_expiry_list(
     underlying_id: int,
     session:       aiohttp.ClientSession,
-) -> list[str]:
+) -> List[str]:
     """POST /v2/optionchain/expirylist"""
     payload = {
         "UnderlyingScrip": underlying_id,
