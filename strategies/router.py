@@ -4,6 +4,7 @@ Only one active trade per strategy slot at a time.
 """
 import asyncio
 import aiohttp
+from typing import Optional, Dict
 from datetime import datetime
 from data_layer import fetch_ltp
 
@@ -35,7 +36,7 @@ class StrategyRouter:
         self,
         session: aiohttp.ClientSession,
         expiry: str,
-    ) -> dict | None:
+    ) -> Optional[Dict]:
         """Returns {"signal": <SignalObject>, "strategy": str, "params": {...}} or None."""
         self.reset_daily_state()
 

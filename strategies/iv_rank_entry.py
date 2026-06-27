@@ -38,7 +38,7 @@ def compute_gap(df_5m: pd.DataFrame) -> float:
     return (today_open - prev_close) / prev_close * 100
 
 
-def get_atm_iv(chain_data: dict, spot: float) -> tuple[float, float]:
+def get_atm_iv(chain_data: dict, spot: float) -> Tuple[float, float]:
     """Returns (atm_iv, atm_vega) for strike closest to spot."""
     best_strike = None
     best_iv = 0.0
